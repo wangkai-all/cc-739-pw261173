@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>采购组合报价分析</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>采购组合报价分析</h1>
+  <div class="header-actions">
+    <button id="btn-sample" class="ghost">载入内置示例</button>
+    <button id="btn-import" class="ghost">导入批次 JSON</button>
+    <input type="file" id="file-import" accept=".json,application/json" hidden>
+  </div>
+</header>
+
+<main>
+  <aside id="sidebar">
+    <h2>需求批次</h2>
+    <ul id="batch-list" class="batch-list"></ul>
+    <h2>情景（同批需求独立保存）</h2>
+    <ul id="scenario-list" class="scenario-list"></ul>
+  </aside>
+
+  <section id="content">
+    <div id="empty-hint" class="card">
+      <p>请从左侧选择批次，或点击右上角「导入批次 JSON / 载入内置示例」。</p>
+      <p class="muted">组合报价只能整体接受或拒绝；拆包按明确规则执行；
+        严格口径与缺口罚金口径可分别求解并独立保存。</p>
+    </div>
+
+    <div id="workspace" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2 id="batch-title"></h2>
+          <div>
+            <button id="btn-view-input" class="ghost small">查看/修改输入</button>
+          </div>
+        </div>
+        <div id="batch-meta" class="muted"></div>
+        <div id="stale-banner" class="banner warn" hidden></div>
+      </div>
+
+      <div class="card">
+        <h2>求解配置</h2>
+        <div class="form-grid">
+          <label>业务口径
+            <select id="cfg-mode">
+              <option value="strict">严格满足（不允许缺口）</option>
+              <option value="penalty">允许缺口（按罚金计费）</option>
+            </select>
+          </label>
+          <label id="penalty-wrap" hidden>默认单位罚金（元/单位）
+            <input type="number" id="cfg-penalty" min="0" step="0.01" value="100">
+          </label>
+          <label>最多中标家数（留空=不限）
+            <input type="number" id="cfg-winners" min="1" step="1" placeholder="不限">
+          </label>
+          <label>时间限制（秒）
+            <input type="number" id="cfg-time" min="0.1" step="0.5" value="15">
+          </label>
+        </div>
+        <div id="locks-box">
+          <h3>已锁定项（重算不得替换）</h3>
+          <ul id="locks-list" class="locks-list"></ul>
+        </div>
+        <div class="action-row">
+          <button id="btn-solve" class="primary">求解</button>
+          <button id="btn-save-new">另存为新情景</button>
+          <button id="btn-save-scenario" hidden>保存到当前情景</button>
+          <button id="btn-clone" class="ghost" hidden>克隆当前情景</button>
+          <button id="btn-export" class="ghost" disabled>导出采购明细 CSV</button>
+          <span id="scenario-label" class="muted"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>报价清单（取消勾选=停用该报价）</h2>
+        <table id="quote-table" class="data-table">
+          <thead><tr>
+            <th>启用</th><th>报价ID</th><th>类型</th><th>供应商</th>
+            <th>内容 / 价格</th><th>约束</th><th>状态</th><th>操作</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div id="result-card" class="card" hidden>
+        <h2>求解结果</h2>
+        <div id="status-banner"></div>
+        <div id="kpi-row" class="kpi-row"></div>
+        <div id="warnings" class="banner warn" hidden></div>
+        <h3>实际分配</h3>
+        <table id="alloc-table" class="data-table">
+          <thead><tr>
+            <th>报价ID</th><th>类型</th><th>供应商</th><th>接受</th>
+            <th>数量/拆份</th><th>交付明细</th><th>金额(元)</th><th>锁定</th><th>备注</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <h3>需求覆盖核对</h3>
+        <table id="coverage-table" class="data-table">
+          <thead><tr>
+            <th>物料</th><th>需求量</th><th>等价覆盖（精确分数）</th>
+            <th>缺口</th><th>来源</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="shadow-box" hidden>
+          <h3>约束影子分析（离散边际，仅证最优时有效）</h3>
+          <table id="shadow-table" class="data-table">
+            <thead><tr>
+              <th>约束</th><th>放松 1 单位节省(元)</th>
+              <th>收紧 1 单位增加(元)</th><th>备注</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="infeasible-box" hidden></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 输入编辑弹窗 -->
+<dialog id="dlg-input">
+  <form method="dialog">
+    <h3>批次输入（JSON）</h3>
+    <textarea id="input-json" rows="22" spellcheck="false"></textarea>
+    <menu>
+      <button value="cancel" class="ghost">取消</button>
+      <button id="btn-update-input" value="default">校验并更新（会使旧情景失效）</button>
+    </menu>
+  </form>
+</dialog>
+
+<!-- why-not 弹窗 -->
+<dialog id="dlg-why">
+  <h3>为什么这个组合没被选中？</h3>
+  <div id="why-body"></div>
+  <menu><button class="ghost" onclick="this.closest('dialog').close()">关闭</button></menu>
+</dialog>
+
+<!-- 锁定弹窗 -->
+<dialog id="dlg-lock">
+  <form method="dialog">
+    <h3>锁定报价</h3>
+    <p id="lock-desc" class="muted"></p>
+    <label>锁定值（单项=交付数量；组合=拆份数）
+      <input type="number" id="lock-qty" min="1" step="1">
+    </label>
+    <menu>
+      <button value="cancel" class="ghost">取消</button>
+      <button id="btn-confirm-lock" value="default">确认锁定</button>
+    </menu>
+  </form>
+</dialog>
+
+<div id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
